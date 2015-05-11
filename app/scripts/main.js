@@ -1,3 +1,4 @@
+/* global $, Q, _, jsPDF */
 'use strict';
 
 /*
@@ -58,8 +59,25 @@ function lpad(s, p, l) {
     return s;
 }
 
+function pageDistribution(count, countPerPage, groupBy) {
+    groupBy = groupBy || 1;
+    var pageCount = Math.ceil(count/countPerPage);
+    var rowsPerPage = Math.ceil(count/pageCount);
+    var cuttingMachineOrder = [];
+    var i, j;
+    for (i = 0; i < pageCount; i++) {
+        cuttingMachineOrder.push([]);
+    }
+    for (i = 0; i < count; ) {
+        for (j = 0; i < count && j < groupBy; i++, j++) {
+            cuttingMachineOrder[(i-j)/groupBy % pageCount].push(i);
+        }
+    }
+    return cuttingMachineOrder;
+}
+
 jsPDF.API.teamRegistering = function teamRegistering(team, config) {
-    $.extend({
+    _.extend({
         x: 10,
         y: 10,
         width: 40,
@@ -97,7 +115,7 @@ jsPDF.API.teamPlaying = function teamPlaying(team, player, config) {
     this.text(config.x + 1, config.y + config.height-1, 'PLAYER USING DECK');
     this.setFont('helvetica', 'bold');
     this.setFontSize(12);
-    this.text(config.x + config.width-1, config.y + config.height/2, lpad("" + player.tableNumber, '0', 3), 90);
+    this.text(config.x + config.width-1, config.y + config.height/2, lpad('' + player.tableNumber, '0', 3), 90);
     this.setFont('courier', 'normal');
     this.setFontSize(12);
     this.text(config.x + 1, config.y + 4, fitString(team.teamName, 15));
@@ -122,41 +140,52 @@ function renderLabels(model) {
             cornerRadius: 1.5
         };
 
-    var forLayout = [];
+    var forLayout = _.chain(pageDistribution(model.teams.length, paperSettings.labelAround, 2))
+        .map(function (page) {
+            return _.chain(page)
+                .map(function (pos) {
+                    return model.teams[pos];
+                })
+                .map(function (team) {
+                    var set = [];
+                    set.push([ 'teamRegistering', team ]);
 
-    $.each(model.teams, function (i, team) {
-        forLayout.push(['teamRegistering', team]);
-
-        $.each(team.players, function (j, player) {
-            forLayout.push(['teamPlaying', team, player]);
-        });
-    });
+                    _.each(team.players, function (player) {
+                        set.push([ 'teamPlaying', team, player ]);
+                    });
+                    return set;
+                })
+                .flatten(true)
+                .value();
+        })
+        .value();
 
     var x = 0, y = 0;
-    $.each(forLayout, function (k, item) {
-        x += paperSettings.width + paperSettings.gapAcross;
-        if (k % paperSettings.labelAcross === 0) {
-            x = paperSettings.leftMargin;
-            y += paperSettings.height + paperSettings.gapAround;
-        }
-        if (k % (paperSettings.labelAcross * paperSettings.labelAround) === 0) {
-            if (k) {
-                doc.addPage();
+    _.each(forLayout, function (page, pk) {
+        _.each(page, function (item, k) {
+            x += paperSettings.width + paperSettings.gapAcross;
+            if (k % paperSettings.labelAcross === 0) {
+                x = paperSettings.leftMargin;
+                y += paperSettings.height + paperSettings.gapAround;
             }
-            x = paperSettings.leftMargin;
-            y = paperSettings.topMargin;
-        }
+            if (k === 0) {
+                if (pk) {
+                    doc.addPage();
+                }
+                x = paperSettings.leftMargin;
+                y = paperSettings.topMargin;
+            }
 
-        var methodName = item.shift();
-        item.push($.extend({}, paperSettings, { x: x, y: y }));
-        doc[methodName].apply(doc, item);
+            var methodName = item.shift();
+            item.push($.extend({}, paperSettings, { x: x, y: y }));
+            doc[methodName].apply(doc, item);
+        });
     });
 
     return doc;
 }
 
 function updatePreview() {
-    console.log(model);
     var doc = renderLabels(model);
     $('.preview-pane').attr('src', doc.output('datauristring'));
 }
