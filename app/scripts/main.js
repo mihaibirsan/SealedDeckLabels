@@ -124,7 +124,76 @@ jsPDF.API.teamPlaying = function teamPlaying(team, player, config) {
     this.text(config.x + 1, config.y + 11, fitString(playerName[0]) + '\n' + fitString(playerName[1]) + '\n' + player.dcinum);
 };
 
-function renderLabels(model) {
+jsPDF.API.horizontalCutMarks = function horizontalCutMarks(y) {
+    var w = 15, n = 3;
+    var ww = w/(n*2-1);
+    for (var i = 0; i < n; i++) {
+        this.lines([[ww, 0]], ww*i*2, y);
+        this.lines([[ww, 0]], 210-w+ww*i*2, y);
+    }
+}
+
+jsPDF.API.header = function header(text) {
+    this.setFont('helvetica', 'bold');
+    this.setFontSize(12);
+    this.text(80, 20, text);
+};
+
+jsPDF.API.team = function team(team, config) {
+    $.extend({
+        x: 10,
+        y: 10,
+        width: 100,
+        height: 40
+    }, config);
+    this.setFont('helvetica', 'normal');
+    this.setFontSize(10);
+    // this.rect(config.x, config.y, config.width, config.height);
+    this.text(config.x +  1, config.y + 6, lpad('' + team.players[0].tableNumber, '0', 3));
+    this.setFontStyle('bold');
+    this.text(config.x + 11, config.y + 6, fitString(team.teamName, 30));
+    this.setFontStyle('normal');
+    _.each(team.players, function (player, k) {
+        this.text(config.x + 21, config.y + 6+(k+1)*5, fitString(player.playerName, 30));
+    }, this);
+};
+
+function renderMasterList(model, pageLimit) {
+    var doc = new jsPDF();
+    var $renderHelper = $('<div class="render-helper-master-list"></div>');
+    var topMargin = 27, leftMargin = 10;
+    var w = 100, h = 25;
+    var itemsPerColumn = Math.floor((297-topMargin-leftMargin)/h), columnsPerPage = 2;
+    var x, y, kp;
+    var page = 0;
+    var pageCount = Math.ceil(model.teams.length / (itemsPerColumn * columnsPerPage));
+    _(model.teams).chain()
+        .sortBy('teamName')
+        .each(function (team, k) {
+            if (page >= pageLimit) return false;
+            kp = k % (itemsPerColumn * columnsPerPage);
+            if (kp === 0) {
+                page++;
+                if (page > pageLimit) return false;
+                if (k) {
+                    doc.addPage();
+                }
+                doc.header('Master List (' + page + ' of ' + pageCount +')');
+            }
+            x = Math.floor(kp/itemsPerColumn) * w;
+            y = (kp % itemsPerColumn) * h;
+
+            doc.team(team, {
+                x: x + leftMargin,
+                y: y + topMargin,
+                width: w,
+                height: h
+            });
+        })
+    return doc;
+}
+
+function renderLabels(model, pageLimit) {
     var doc = new jsPDF();
     var paperSettings = {
             width: 45.7,
@@ -140,7 +209,9 @@ function renderLabels(model) {
             cornerRadius: 1.5
         };
 
-    var forLayout = _.chain(pageDistribution(model.teams.length, paperSettings.labelAround, 2))
+    var cutmarkGroups = 2;
+
+    var forLayout = _.chain(pageDistribution(model.teams.length, paperSettings.labelAround, cutmarkGroups))
         .map(function (page) {
             return _.chain(page)
                 .map(function (pos) {
@@ -159,6 +230,12 @@ function renderLabels(model) {
                 .value();
         })
         .value();
+
+    if (typeof pageLimit !== 'undefined') {
+        forLayout = forLayout.slice(0, pageLimit);
+    }
+
+    var cutmarksIterator = _.range(paperSettings.labelAround/cutmarkGroups + 1);
 
     var x = 0, y = 0;
     _.each(forLayout, function (page, pk) {
@@ -180,13 +257,23 @@ function renderLabels(model) {
             item.push($.extend({}, paperSettings, { x: x, y: y }));
             doc[methodName].apply(doc, item);
         });
+
+        _.each(cutmarksIterator, function (y) {
+            doc.horizontalCutMarks(y * (paperSettings.height + paperSettings.gapAround) * cutmarkGroups + paperSettings.topMargin);
+        });
     });
 
     return doc;
 }
 
 function updatePreview() {
-    var doc = renderLabels(model);
+    var doc;
+    if ($('input[name="preview-type"][value="master-list"]').get(0).checked) {
+        doc = renderMasterList(model, 2);
+    }
+    else {
+        doc = renderLabels(model, 2);
+    }
     $('.preview-pane').attr('src', doc.output('datauristring'));
 }
 
@@ -334,14 +421,20 @@ $(document).on('click', '.action-refresh', function (event) {
     updatePreview();
 });
 
+$(document).on('change', '.onchange-refresh', function (event) {
+    updatePreview();
+});
+
 $(document).on('click', '.action-download-master-list', function (event) {
     event.preventDefault();
-    // TODO: Generate master list document based on model
+    var doc = renderMasterList(model);
+    doc.save('master-list.pdf');
 });
 
 $(document).on('click', '.action-download-labels', function (event) {
     event.preventDefault();
-    // TODO: Generate labels document based on model
+    var doc = renderLabels(model);
+    doc.save('labels.pdf');
 });
 
 $(document).on('click', '.action-toggle-fullscreen', function (event) {
