@@ -328,6 +328,12 @@ module.exports = function (grunt) {
             'styles/fonts/{,*/}*.*'
           ]
         }, {
+          expand: true,
+          dot: true,
+          cwd: 'test/data',
+          src: '{,*/}*.*',
+          dest: '<%= config.dist %>/sample-data/'
+        }, {
           src: 'node_modules/apache-server-configs/dist/.htaccess',
           dest: '<%= config.dist %>/.htaccess'
         }, {
