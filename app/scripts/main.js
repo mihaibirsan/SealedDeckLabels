@@ -131,7 +131,7 @@ jsPDF.API.horizontalCutMarks = function horizontalCutMarks(y) {
         this.lines([[ww, 0]], ww*i*2, y);
         this.lines([[ww, 0]], 210-w+ww*i*2, y);
     }
-}
+};
 
 jsPDF.API.header = function header(text) {
     this.setFont('helvetica', 'bold');
@@ -189,7 +189,7 @@ function renderMasterList(model, pageLimit) {
                 width: w,
                 height: h
             });
-        })
+        });
     return doc;
 }
 
@@ -370,6 +370,46 @@ function parseTeamsFile(contents, filename) {
     return teams;
 }
 
+function parseWERFile(contents, filename) {
+    var xmlDoc = $.parseXML(contents);
+    var $xml = $(xmlDoc);
+    // TODO: seating information available under <seats>
+
+    var tableNumber = 0;
+    var allPlayers = [];
+    var teams = _.chain($xml.find('team').toArray())
+        .map(function (teamEl) {
+            return {
+                teamName: $(teamEl).attr('name'),
+                players: $(teamEl).find('member').toArray()
+            };
+        })
+        .map(function (team) {
+            team.players = _(team.players)
+                .map(function (memberEl) {
+                    var $person = $xml.find('person[id="' + $(memberEl).attr('person') + '"]');
+
+                    var player = {
+                        playerId: $person.attr('id'),
+                        playerName: $person.attr('last') + ', ' + $person.attr('first'),
+                        dcinum: $person.attr('id'),
+                    };
+                    allPlayers.push(player);
+
+                    tableNumber += 0.5;
+                    return _.extend({}, player, {
+                        tableNumber: Math.ceil(tableNumber)
+                    });
+                });
+            return team;
+        })
+        .value();
+
+    model.players = allPlayers;
+    model.teams = teams;
+    return teams;
+}
+
 function clearTeams() {
     model.teams = [];
 }
@@ -383,6 +423,15 @@ function updateView() {
     $('.team-count').text(model.teams.length);
 }
 updateView();
+
+$(document).on('click', '.action-load-wer-file', function (event) {
+    event.preventDefault();
+    openFile()
+        .then(parseWERFile)
+        .then(updatePreview)
+        .then(updateView)
+        .done();
+});
 
 $(document).on('click', '.action-load-players', function (event) {
     event.preventDefault();
