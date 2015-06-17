@@ -373,7 +373,6 @@ function parseTeamsFile(contents, filename) {
 function parseWERFile(contents, filename) {
     var xmlDoc = $.parseXML(contents);
     var $xml = $(xmlDoc);
-    // TODO: seating information available under <seats>
 
     var tableNumber = 0;
     var allPlayers = [];
@@ -389,21 +388,29 @@ function parseWERFile(contents, filename) {
                 .map(function (memberEl) {
                     var $person = $xml.find('person[id="' + $(memberEl).attr('person') + '"]');
 
+                    tableNumber += 0.5;
                     var player = {
                         playerId: $person.attr('id'),
                         playerName: $person.attr('last') + ', ' + $person.attr('first'),
                         dcinum: $person.attr('id'),
+                        tableNumber: Math.ceil(tableNumber)
                     };
                     allPlayers.push(player);
 
-                    tableNumber += 0.5;
-                    return _.extend({}, player, {
-                        tableNumber: Math.ceil(tableNumber)
-                    });
+                    return player;
                 });
             return team;
         })
         .value();
+
+    // Honoring seat information, if available
+    _($xml.find('seats seat').toArray())
+        .map(function (seatEl) {
+            var playerId = $(seatEl).attr('player');
+            var tableNumber = $(seatEl).closest('table').attr('number');
+            var player = _(allPlayers).findWhere({ playerId: playerId });
+            player.tableNumber = parseInt(tableNumber);
+        });
 
     model.players = allPlayers;
     model.teams = teams;
