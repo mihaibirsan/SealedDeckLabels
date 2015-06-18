@@ -76,6 +76,47 @@ function pageDistribution(count, countPerPage, groupBy) {
     return cuttingMachineOrder;
 }
 
+jsPDF.API.playerRegistering = function playerRegistering(player, config) {
+    config = _.extend({
+        x: 10,
+        y: 10,
+        width: 40,
+        height: 20,
+        cornerRadius: 1.5,
+        title: 'PLAYER REGISTERING DECK'
+    }, config);
+
+    this.roundedRect(config.x, config.y, config.width, config.height, config.cornerRadius, config.cornerRadius);
+    var offset = 5;
+    this.roundedRect(config.x, config.y+offset, config.width, config.height-offset, config.cornerRadius, config.cornerRadius);
+    this.setFont('helvetica', 'bold');
+    this.setFontSize(10);
+    this.text(config.x + 1, config.y + 4, config.title);
+
+    var playerName = player.playerName.split(/, /, 2);
+    this.setFont('courier', 'normal');
+    this.setFontSize(12);
+    this.text(config.x + 1, config.y + 9, fitString(playerName[0]) + '\n' + fitString(playerName[1]) + '\n' + player.dcinum);
+
+    this.setFont('helvetica', 'bold');
+    this.setFontSize(24);
+    this.text(config.x + config.width-3, config.y + config.height-3, lpad('' + player.tableNumber, '0', 3), 90);
+};
+
+jsPDF.API.playerPlaying = function playerRegistering(player, config) {
+    config = _.extend({
+        title: 'PLAYER USING DECK'
+    }, config);
+    return this.playerRegistering(player, config);
+};
+
+jsPDF.API.playerBackup = function playerRegistering(player, config) {
+    config = _.extend({
+        title: ''
+    }, config);
+    return this.playerRegistering(player, config);
+};
+
 jsPDF.API.teamRegistering = function teamRegistering(team, config) {
     _.extend({
         x: 10,
@@ -133,10 +174,39 @@ jsPDF.API.horizontalCutMarks = function horizontalCutMarks(y) {
     }
 };
 
+jsPDF.API.previewPrecut = function previewPrecut() {
+    return;
+    var w = 210, h = 297;
+    var n = 3, m = 8;
+    this.setDrawColor(255, 0, 0);
+    var i;
+    for (i = 1; i < n; i++) {
+        this.lines([[0, h]], w/n*i, 0);
+    }
+    for (i = 1; i < m; i++) {
+        this.lines([[w, 0]], 0, h/m*i);
+    }
+    this.setDrawColor(0, 0, 0);
+};
+
 jsPDF.API.header = function header(text) {
     this.setFont('helvetica', 'bold');
     this.setFontSize(12);
     this.text(80, 20, text);
+};
+
+jsPDF.API.player = function player(player, config) {
+    $.extend({
+        x: 10,
+        y: 10,
+        width: 100,
+        height: 40
+    }, config);
+    this.setFont('helvetica', 'normal');
+    this.setFontSize(10);
+    // this.rect(config.x, config.y, config.width, config.height);
+    this.text(config.x +  1, config.y + 6, lpad('' + player.tableNumber, '0', 3));
+    this.text(config.x + 11, config.y + 6, fitString(player.playerName, 30));
 };
 
 jsPDF.API.team = function team(team, config) {
@@ -159,6 +229,46 @@ jsPDF.API.team = function team(team, config) {
 };
 
 function renderMasterList(model, pageLimit) {
+    // TODO: Add option to render another layout
+    return renderMasterList_Individual(model, pageLimit);
+    // return renderMasterList_TeamGroups(model, pageLimit);
+}
+
+function renderMasterList_Individual(model, pageLimit) {
+    var doc = new jsPDF();
+    var topMargin = 27, leftMargin = 25, bottomMargin = 10;
+    var w = 80, h = 7;
+    var itemsPerColumn = Math.floor((297-topMargin-bottomMargin)/h), columnsPerPage = 2;
+    var x, y, kp;
+    var page = 0;
+    var pageCount = Math.ceil(model.players.length / (itemsPerColumn * columnsPerPage));
+    _(model.players).chain()
+        .sortBy('playerName')
+        .each(function (player, k) {
+            if (page >= pageLimit) return false;
+            kp = k % (itemsPerColumn * columnsPerPage);
+            if (kp === 0) {
+                page++;
+                if (page > pageLimit) return false;
+                if (k) {
+                    doc.addPage();
+                }
+                doc.header('Master List (' + page + ' of ' + pageCount +')');
+            }
+            x = Math.floor(kp/itemsPerColumn) * w;
+            y = (kp % itemsPerColumn) * h;
+
+            doc.player(player, {
+                x: x + leftMargin,
+                y: y + topMargin,
+                width: w,
+                height: h
+            });
+        });
+    return doc;
+}
+
+function renderMasterList_TeamGroups(model, pageLimit) {
     var doc = new jsPDF();
     var $renderHelper = $('<div class="render-helper-master-list"></div>');
     var topMargin = 27, leftMargin = 10;
@@ -194,6 +304,86 @@ function renderMasterList(model, pageLimit) {
 }
 
 function renderLabels(model, pageLimit) {
+    // TODO: Add option to render another layout
+    return renderLabels_Individual(model, pageLimit);
+    // return renderLabels_Teams4by4(model, pageLimit);
+}
+
+function renderLabels_Individual(model, pageLimit) {
+    var doc = new jsPDF();
+    var paperSettings = {
+            width: 60,
+            height: 27,
+            labelAcross: 3,
+            labelAround: 8,
+            topMargin: 6,
+            bottomMargin: 5,
+            leftMargin: 8,
+            rightMargin: 8,
+            gapAcross: 7,
+            gapAround: 10,
+            cornerRadius: 0
+        };
+
+    var cutmarkGroups = 2;
+    
+    var allPlayers = _(model.players).sortBy('tableNumber');
+
+    var forLayout = _.chain(pageDistribution(allPlayers.length, paperSettings.labelAround, cutmarkGroups))
+        .map(function (page) {
+            return _.chain(page)
+                .map(function (pos) {
+                    return allPlayers[pos];
+                })
+                .map(function (player) {
+                    var set = [];
+                    set.push([ 'playerRegistering', player ]);
+                    set.push([ 'playerPlaying', player ]);
+                    set.push([ 'playerBackup', player ]);
+                    return set;
+                })
+                .flatten(true)
+                .value();
+        })
+        .value();
+
+    if (typeof pageLimit !== 'undefined') {
+        forLayout = forLayout.slice(0, pageLimit);
+    }
+
+    var cutmarksIterator = _.range(paperSettings.labelAround/cutmarkGroups + 1);
+
+    var x = 0, y = 0;
+    _.each(forLayout, function (page, pk) {
+        _.each(page, function (item, k) {
+            x += paperSettings.width + paperSettings.gapAcross;
+            if (k % paperSettings.labelAcross === 0) {
+                x = paperSettings.leftMargin;
+                y += paperSettings.height + paperSettings.gapAround;
+            }
+            if (k === 0) {
+                if (pk) {
+                    doc.previewPrecut();
+                    doc.addPage();
+                }
+                x = paperSettings.leftMargin;
+                y = paperSettings.topMargin;
+            }
+
+            var methodName = item.shift();
+            item.push($.extend({}, paperSettings, { x: x, y: y }));
+            doc[methodName].apply(doc, item);
+        });
+
+        _.each(cutmarksIterator, function (y) {
+            // doc.horizontalCutMarks(y * (paperSettings.height + paperSettings.gapAround) * cutmarkGroups + paperSettings.topMargin);
+        });
+    });
+
+    return doc;
+}
+
+function renderLabels_Teams4by4(model, pageLimit) {
     var doc = new jsPDF();
     var paperSettings = {
             width: 45.7,
